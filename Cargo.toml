@@ -1,0 +1,14 @@
+[package]
+name    = "fastplus"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name       = "fastplus"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pest        = "2.8.8"
+pest_derive = "2.8.8"
+pyo3        = "0.29.0"
+thiserror   = "2.0.19"

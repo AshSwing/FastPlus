@@ -1,0 +1,42 @@
+#!/bin/zsh
+set -e
+
+run_check() {
+    local name="$1"
+    shift
+
+    local output
+    local exit_code
+
+    if output=$("$@" 2>&1); then
+        return 0
+    else
+        exit_code=$?
+        print -u2 -- "$name failed"
+        print -u2 -r -- "$output"
+        return "$exit_code"
+    fi
+}
+
+run_check "ruff check" uv run ruff check python
+run_check "ruff format" uv run ruff format --check python
+run_check "ty" uv run ty check
+
+run_check "cargo check" env \
+    PYO3_PYTHON="$(pwd)/.venv/bin/python" \
+    cargo check --all-targets --all-features
+
+run_check "cargo test" env \
+    PYO3_PYTHON="$(pwd)/.venv/bin/python" \
+    cargo test --all-targets --all-features
+
+for example_path in examples/*.rs(N); do
+    example_name="${example_path:t:r}"
+    run_check "cargo run --example $example_name" env \
+        PYO3_PYTHON="$(pwd)/.venv/bin/python" \
+        cargo run --example "$example_name" --all-features
+done
+
+run_check "cargo clippy" env \
+    PYO3_PYTHON="$(pwd)/.venv/bin/python" \
+    cargo clippy --all-targets --all-features -- -D warnings

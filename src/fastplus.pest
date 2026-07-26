@@ -1,0 +1,81 @@
+//! FastPlus 语法规则表
+
+/// Lexical 词法元素
+
+// 空白
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+
+// 注释
+LINE_COMMENT   = _{ ("//" | "#") ~ (!"\n" ~ ANY)* }
+REGION_COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+COMMENT        = _{ LINE_COMMENT | REGION_COMMENT }
+
+// 数字
+SIGN              = _{ "+" | "-" }
+EXPONENT_POSITIVE = _{ ("e" | "E") ~ "+"? ~ ASCII_DIGIT+ }
+EXPONENT_NEGATIVE = _{ ("e" | "E") ~ "-" ~ ASCII_DIGIT+ }
+INTEGER           = @{ SIGN? ~ ASCII_DIGIT+ ~ EXPONENT_POSITIVE? }
+FLOAT             = @{
+    SIGN? ~ ((ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ (EXPONENT_POSITIVE | EXPONENT_NEGATIVE)?) | (ASCII_DIGIT+ ~ EXPONENT_NEGATIVE))
+}
+
+// 字符串
+DQUOTE_STRING = _{ "\"" ~ ("\\" ~ ANY | !"\"" ~ ANY)* ~ "\"" }
+SINGLE_STRING = _{ "'" ~ ("\\" ~ ANY | !"'" ~ ANY)* ~ "'" }
+STRING        = @{ DQUOTE_STRING | SINGLE_STRING }
+
+// 布尔值
+BOOLEAN = @{ ^"true" | ^"false" }
+
+// 变量
+PLACEHOLDER = @{ "<" ~ VARIABLE ~ "/>" }
+VARIABLE    = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// 常量
+CONSTANT = { FLOAT | INTEGER | BOOLEAN | STRING }
+
+/// Grammar 语法规则
+
+// 只能匹配单个 Alpha, 不支持批量匹配
+start = { SOI ~ alpha ~ EOI }
+
+// Alpha 基本元素: [赋值语句;]* ~ 因子表达式 ~ ;?
+// 最后的 ; 为适应性匹配, 平台支持这种写法, 但是会忽略
+alpha = { (assignment ~ ";")* ~ expression ~ ";"? }
+
+// 赋值语句 VARIABLE = expression
+// 不支持占位符, 除了单赋值场景 assignment ~ ; 还包括操作符参数 assignment ~ ,?
+assignment = { VARIABLE ~ "=" ~ expression }
+
+// 操作符调用 op(posarg, ..., kwarg, ...)
+// 约束：至少一个 PosArg，且 Kwarg 必须出现在所有 PosArg 之后
+// Kwarg 只支持常数, PosArg 支持表达式, 平台会自动展开成数值矩阵
+// 占位符只支持表达式类型, 不可以使用 Op 占位
+kwarg     = { VARIABLE ~ "=" ~ CONSTANT }
+posarg    = { !(VARIABLE ~ "=") ~ expression }
+args      = { posarg ~ ("," ~ posarg)* ~ ("," ~ kwarg)* }
+operation = { VARIABLE ~ "(" ~ args ~ ")" }
+
+// 表达式 Expression
+expression = { pratt_expr ~ ternary_tail? }
+
+// 三元组 cond ? true : false
+ternary_tail = { "?" ~ expression ~ ":" ~ expression }
+
+pratt_expr = { prefix* ~ primary ~ ((or_op | and_op | cmp_op | add_op | mul_op) ~ prefix* ~ primary)* }
+
+// PrattParser
+prefix = { "!" | "+" | "-" }
+or_op  = { "||" }
+and_op = { "&&" }
+cmp_op = { "!=" | "==" | ">=" | "<=" | ">" | "<" }
+add_op = { "+" | "-" }
+mul_op = { "*" | "/" }
+
+primary = {
+    operation
+  | PLACEHOLDER
+  | VARIABLE
+  | CONSTANT
+  | "(" ~ expression ~ ")"
+}
