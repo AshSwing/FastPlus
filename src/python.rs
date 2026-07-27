@@ -2,14 +2,15 @@
 #[path = "python_macro.rs"]
 mod python_macro;
 
-use crate::ast::{Alpha, Assignment, BinaryOp, Constant, Driver, Expression, KwArg, UnaryOp};
+use crate::ast::{Alpha, Assignment, BinaryOp, Constant, Driver, Expression, UnaryOp};
 use crate::parse as parse_rust;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use std::collections::HashMap;
 
 py_class!(
     (PyAlpha(Alpha), name = "Alpha"),
     (PyAssignment(Assignment), name = "Assignment"),
-    (PyKwArg(KwArg), name = "KwArg"),
     (PyExpression, name = "Expression", attrs = [subclass]),
     (
         PyTernaryExpr {
@@ -41,7 +42,7 @@ py_class!(
         PyOperationExpr {
             op: String,
             pos_args: Vec<Expression>,
-            kw_args: Vec<KwArg>,
+            kw_args: HashMap<String, Constant>,
         },
         name = "OperationExpr",
         super = PyExpression
@@ -283,15 +284,6 @@ py_getters!(
         }
     ),
     (
-        PyKwArg,
-        {
-            name: &str, |self, _py| { &self.0.name },
-            value: PyResult<Py<PyExpression>>, |self, py| {
-                build_pyconstant(py, self.0.value.clone())
-            }
-        }
-    ),
-    (
         PyOperationExpr,
         {
             op: &str, |self, _py| { &self.op },
@@ -302,8 +294,12 @@ py_getters!(
                     .map(|expr| build_pyexpression(py, expr))
                     .collect()
             },
-            kw_args: Vec<PyKwArg>, |self, _py| {
-                self.kw_args.iter().cloned().map(PyKwArg).collect()
+            kw_args: PyResult<Py<PyDict>>, |self, py| {
+                let dict = PyDict::new(py);
+                for (name, value) in &self.kw_args {
+                    dict.set_item(name, build_pyconstant(py, value.clone())?)?;
+                }
+                Ok(dict.unbind())
             }
         }
     ),
@@ -390,7 +386,6 @@ pub fn fastplus(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyAssignment>()?;
     module.add_class::<PyBinaryOp>()?;
     module.add_class::<PyUnaryOp>()?;
-    module.add_class::<PyKwArg>()?;
     module.add_class::<PyDriver>()?;
     module.add_class::<PyExpression>()?;
     module.add_class::<PyTernaryExpr>()?;

@@ -2,13 +2,14 @@
 /// build_* -> struct
 /// parse_* -> enum
 use crate::ast::{
-    Alpha, Assignment, BinaryOp, Constant, Driver, Expression, FastPlusParser, KwArg, Rule, UnaryOp,
+    Alpha, Assignment, BinaryOp, Constant, Driver, Expression, FastPlusParser, Rule, UnaryOp,
 };
 use pest::Parser;
 use pest::Position;
 use pest::error::{Error as PestError, ErrorVariant::CustomError};
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
+use std::collections::{HashMap, hash_map::Entry};
 
 pub fn parse(input: &str) -> Result<Alpha, PestError<Rule>> {
     let input = input.trim_end();
@@ -214,7 +215,7 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
                         // op(args*, kwargs*)
                         let op = operation.next().unwrap().to_string();
                         let mut pos_args = Vec::<Expression>::new();
-                        let mut kw_args = Vec::<KwArg>::new();
+                        let mut kw_args = HashMap::new();
 
                         let args = operation.next().unwrap().into_inner();
                         for arg in args {
@@ -222,13 +223,20 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
                                 Rule::posarg => pos_args
                                     .push(parse_expression(arg.into_inner().next().unwrap())?),
                                 Rule::kwarg => {
+                                    let arg_span = arg.as_span();
                                     let mut kwarg = arg.into_inner();
                                     let name = kwarg.next().unwrap().to_string();
                                     let value = kwarg.next().unwrap();
-                                    kw_args.push(KwArg {
-                                        name,
-                                        value: parse_constant(value.into_inner().next().unwrap())?,
-                                    })
+                                    if let Entry::Occupied(_) = kw_args.entry(name.clone()) {
+                                        return Err(PestError::new_from_span(
+                                            CustomError {
+                                                message: format!("重复的关键字参数 `{name}`"),
+                                            },
+                                            arg_span,
+                                        ));
+                                    }
+                                    let value = parse_constant(value.into_inner().next().unwrap())?;
+                                    kw_args.insert(name, value);
                                 }
                                 other => {
                                     return Err(PestError::new_from_span(
@@ -522,6 +530,7 @@ mod tests {
             "1abc",
             "x ? y",
             "foo(,x)",
+            "foo(x=1, x=2)",
         ];
 
         for input in inputs {

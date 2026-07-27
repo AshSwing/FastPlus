@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pest_derive::Parser;
 
 #[derive(Parser)]
@@ -71,12 +73,6 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, Clone)]
-pub struct KwArg {
-    pub name: String,
-    pub value: Constant,
-}
-
-#[derive(Debug, Clone)]
 pub enum Driver {
     Gaussian,
     Uniform,
@@ -124,7 +120,7 @@ pub enum Expression {
         // op(args)
         op: String,
         pos_args: Vec<Expression>,
-        kw_args: Vec<KwArg>,
+        kw_args: HashMap<String, Constant>,
     },
     Constant(Constant),
     Placeholder(String),

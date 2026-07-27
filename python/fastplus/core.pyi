@@ -41,7 +41,7 @@ class UnaryExpr(Expression):
 class OperationExpr(Expression):
     op: str
     pos_args: list[Expression]
-    kw_args: list[KwArg]
+    kw_args: dict[str, Constant]
 
 class Constant(Expression): ...
 
@@ -100,10 +100,6 @@ class GroupExpr(Expression):
 class Assignment:
     variable: str
     value: Expression
-
-class KwArg:
-    name: str
-    value: Constant
 
 class Alpha:
     assignments: list[Assignment]
