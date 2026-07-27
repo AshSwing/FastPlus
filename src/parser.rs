@@ -5,15 +5,85 @@ use crate::ast::{
     Alpha, Assignment, BinaryOp, Constant, Driver, Expression, FastPlusParser, KwArg, Rule, UnaryOp,
 };
 use pest::Parser;
+use pest::Position;
 use pest::error::{Error as PestError, ErrorVariant::CustomError};
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
 pub fn parse(input: &str) -> Result<Alpha, PestError<Rule>> {
+    let input = input.trim_end();
+    check_parentheses(input)?;
     let mut pairs = FastPlusParser::parse(Rule::start, input)?;
     let start = pairs.next().unwrap();
     let alpha = start.into_inner().next().unwrap();
     build_alpha(alpha)
+}
+
+fn check_parentheses(input: &str) -> Result<(), PestError<Rule>> {
+    let mut parentheses = Vec::new();
+    let mut chars = input.char_indices().peekable();
+    let mut quote = None;
+    let mut line_comment = false;
+    let mut block_comment = false;
+
+    //? 这里为什么不直接 for (index, ch) in chars
+    while let Some((index, ch)) = chars.next() {
+        if line_comment {
+            if ch == '\n' {
+                line_comment = false;
+            }
+            continue;
+        }
+        if block_comment {
+            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                chars.next();
+                block_comment = false;
+            }
+            continue;
+        }
+        if let Some(quote_char) = quote {
+            if ch == '\\' {
+                chars.next();
+            } else if ch == quote_char {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '/' if chars.peek().is_some_and(|(_, next)| *next == '/') => {
+                chars.next();
+                line_comment = true;
+            }
+            '/' if chars.peek().is_some_and(|(_, next)| *next == '*') => {
+                chars.next();
+                block_comment = true;
+            }
+            '(' => parentheses.push(index),
+            ')' if parentheses.pop().is_none() => {
+                return Err(PestError::new_from_pos(
+                    CustomError {
+                        message: "多余的右括号 `)`".to_string(),
+                    },
+                    Position::new(input, index).unwrap(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(open_index) = parentheses.last().copied() {
+        let (line, column) = Position::new(input, open_index).unwrap().line_col();
+        return Err(PestError::new_from_pos(
+            CustomError {
+                message: format!("缺少右括号 `)`（左括号位于第 {line} 行第 {column} 列）"),
+            },
+            Position::new(input, input.len()).unwrap(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn build_alpha(pair: Pair<Rule>) -> Result<Alpha, PestError<Rule>> {
@@ -435,6 +505,7 @@ mod tests {
             "x ? y : z",
             "foo(<x/>)",
             "-(1 + 2) * 3",
+            "  returns  \n\t",
         ];
 
         for input in inputs {
@@ -456,5 +527,11 @@ mod tests {
         for input in inputs {
             assert!(parse(input).is_err(), "expected `{input}` to fail");
         }
+    }
+
+    #[test]
+    fn reports_missing_closing_parenthesis() {
+        let error = parse("multiply(rank(abs(zscore(<score/>)))").unwrap_err();
+        assert!(error.to_string().contains("缺少右括号 `)`"));
     }
 }
