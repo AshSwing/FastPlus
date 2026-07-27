@@ -192,6 +192,7 @@ jobs:
         with:
           tag_name: ${{ steps.release-tag.outputs.tag }}
           generate_release_notes: true
+          append_body: false
           overwrite_files: true
           files: wheels-*/*
       - name: Install uv
