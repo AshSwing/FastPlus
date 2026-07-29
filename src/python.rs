@@ -275,7 +275,16 @@ py_getters!(
             },
             signal: PyResult<Py<PyExpression>>, |self, py| {
                 build_pyexpression(py, self.0.signal().clone())
-            }
+            },
+            fields: PyResult<Py<PyDict>>, |self, py| {
+                let fields = self.0.fields();
+                let dict = PyDict::new(py);
+                dict.set_item("matrix", fields.matrix)?;
+                dict.set_item("vector", fields.vector)?;
+                dict.set_item("group", fields.group)?;
+                Ok(dict.unbind())
+            },
+            operators: Vec<String>, |self, _py| { self.0.operators() },
         }
     ),
     (

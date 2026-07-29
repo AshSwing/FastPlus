@@ -109,15 +109,25 @@ fn build_alpha(pair: Pair<Rule>) -> Result<Alpha, PestError<Rule>> {
                     }
                 }
             }
-            Ok(Alpha::new(
-                assignments,
-                signal.ok_or(PestError::new_from_span(
+            let signal = signal.ok_or(PestError::new_from_span(
+                CustomError {
+                    message: "因子只有赋值语句, 缺少信号表达式".to_string(),
+                },
+                span,
+            ))?;
+            if let Some(signal_type) = infer_field(&signal)
+                && !Field::Matrix.fit(&signal_type)
+            {
+                return Err(PestError::new_from_span(
                     CustomError {
-                        message: "因子只有赋值语句, 缺少信号表达式".to_string(),
+                        message: format!(
+                            "signal must be Matrix-compatible, but got {signal_type:?}"
+                        ),
                     },
                     span,
-                ))?,
-            ))
+                ));
+            }
+            Ok(Alpha::new(assignments, signal))
         }
         other => Err(PestError::new_from_span(
             CustomError {
@@ -437,6 +447,15 @@ mod tests {
     }
 
     #[test]
+    fn signal_must_be_matrix_compatible() {
+        assert!(parse("group_rank(x, industry)").is_ok());
+        assert!(parse("vec_avg(<prices/>)").is_ok());
+        assert!(parse("42").is_ok());
+        assert!(parse("bucket(rank(x), range='0, 1, 0.1')").is_err());
+        assert!(parse("bucket(rank(x), buckets='0, 1')").is_err());
+    }
+
+    #[test]
     fn parse_failure() {
         let inputs = [
             "a=1;",
@@ -462,6 +481,21 @@ mod tests {
 
         assert!(parse("divide('foo', 2)").is_err());
         assert!(parse("divide(x)").is_err());
+    }
+
+    #[test]
+    fn collects_typed_fields_and_operator_names() {
+        let alpha = parse("a=ts_delay(close, 5);group_rank(a, industry)").unwrap();
+        let fields = alpha.fields();
+        assert_eq!(fields.matrix, vec!["close"]);
+        assert_eq!(fields.group, vec!["industry"]);
+        assert!(fields.vector.is_empty());
+        assert_eq!(alpha.operators(), vec!["ts_delay", "group_rank"]);
+
+        let alpha = parse("vec_avg(<prices/>)").unwrap();
+        let fields = alpha.fields();
+        assert_eq!(fields.vector, vec!["<prices/>"]);
+        assert!(fields.matrix.is_empty());
     }
 
     #[test]

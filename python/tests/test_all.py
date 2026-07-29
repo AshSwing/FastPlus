@@ -73,3 +73,14 @@ def test_parse_tree_exposes_expression_and_constant_types():
 def test_python_parse_reports_operator_type_errors():
     with pytest.raises(ValueError, match="divide"):
         fastplus.parse("divide('not a matrix', 2)")
+
+
+def test_alpha_reports_typed_fields_and_operators():
+    alpha = fastplus.parse("a=ts_delay(close, 5);group_rank(a, industry)")
+
+    assert alpha.fields == {
+        "matrix": ["close"],
+        "vector": [],
+        "group": ["industry"],
+    }
+    assert alpha.operators == ["ts_delay", "group_rank"]

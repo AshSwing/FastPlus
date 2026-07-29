@@ -114,5 +114,7 @@ class Assignment:
 class Alpha:
     assignments: list[Assignment]
     signal: Expression
+    fields: dict[str, list[str]]
+    operators: list[str]
 
 def parse(input: str) -> Alpha: ...
