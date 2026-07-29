@@ -1220,7 +1220,7 @@ define_operator_registry! {
         {
             "lower" => (Number, None),
             "upper" => (Number, None),
-            "inverse" => (Boolean, None),
+            "inverse" => (Boolean, Some(Constant::Boolean(false))),
             "mask" => (Mask, Some(Constant::NaN)),
         },
         1,
