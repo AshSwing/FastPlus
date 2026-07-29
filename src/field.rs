@@ -218,6 +218,7 @@ impl Constant {
             | (Constant::Driver(_), Constant::Driver(_))
             | (Constant::Range(_), Constant::Range(_))
             | (Constant::Array(_), Constant::Array(_))
+            | (Constant::Array(_), Constant::Range(_))
             | (Constant::Set(_), Constant::Set(_))
             | (Constant::String(_), Constant::String(_)) => true,
             _ => false,
@@ -495,6 +496,8 @@ mod tests {
         assert!(Constant::Ratio(0.0).fit(&Constant::Zero));
         assert!(Constant::Ratio(0.0).fit(&Constant::One));
         assert!(!Constant::Ratio(0.0).fit(&Constant::PositiveInteger(2)));
+        assert!(Constant::Array(Vec::new()).fit(&Constant::Range(0.1)));
+        assert!(!Constant::Range(0.1).fit(&Constant::Array(Vec::new())));
 
         let expected = HashSet::from([1, 2, 3]);
         let actual = Constant::EnumInteger {

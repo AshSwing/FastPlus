@@ -85,10 +85,7 @@ impl Operator {
             };
 
             let actual = Field::Constant(value.clone());
-            let bucket_nan = self.name == "bucket"
-                && matches!(name.as_str(), "range" | "buckets")
-                && is_nan_constant(value);
-            if !spec.param_type.fit(&actual) && !bucket_nan {
+            if !spec.param_type.fit(&actual) {
                 return Err(OperatorCheckError::InvalidKeywordType {
                     name: name.clone(),
                     expected: Box::new(spec.param_type.clone()),
@@ -142,8 +139,34 @@ impl Operator {
                 }
             }
             "bucket" => {
-                if let (Some(range), Some(buckets)) = (kw_args.get("range"), kw_args.get("buckets"))
+                let range = kw_args.get("range").or_else(|| {
+                    self.kw_args
+                        .get("range")
+                        .and_then(|spec| spec.default_value.as_ref())
+                });
+                let buckets = kw_args.get("buckets").or_else(|| {
+                    self.kw_args
+                        .get("buckets")
+                        .and_then(|spec| spec.default_value.as_ref())
+                });
+                if let Some(buckets) = buckets
+                    && !is_nan_constant(buckets)
+                    && matches!(buckets, Constant::Range(_))
                 {
+                    return Err(OperatorCheckError::InvalidExpression(
+                        "bucket requires buckets to be an Array, not a Range, consider use the range param".to_string(),
+                    ));
+                }
+                if let Some(Constant::Array(values)) = buckets
+                    && !values
+                        .windows(2)
+                        .all(|pair| pair[0].is_finite() && pair[1].is_finite() && pair[1] > pair[0])
+                {
+                    return Err(OperatorCheckError::InvalidExpression(
+                        "bucket requires buckets to be strictly increasing".to_string(),
+                    ));
+                }
+                if let (Some(range), Some(buckets)) = (range, buckets) {
                     let range_is_nan = is_nan_constant(range);
                     let buckets_is_nan = is_nan_constant(buckets);
                     if range_is_nan == buckets_is_nan {
@@ -1181,8 +1204,8 @@ define_operator_registry! {
         "bucket",
         [Matrix],
         {
-            "range" => (Range, None),
-            "buckets" => (Array, None),
+            "range" => (Range, Some(Constant::NaN)),
+            "buckets" => (Array, Some(Constant::NaN)),
             "skipBoth" => (Boolean, Some(Constant::Boolean(false))),
             "NaNGroup" => (Boolean, Some(Constant::Boolean(false))),
         },
@@ -1474,6 +1497,12 @@ mod tests {
         ));
 
         let bucket = get_operator("bucket").unwrap();
+        assert!(matches!(
+            bucket.apply(&[Field::Matrix], &HashMap::new()),
+            Err(OperatorCheckError::InvalidExpression(message))
+                if message.contains("exactly one")
+        ));
+
         let mut bucket_kwargs = HashMap::new();
         bucket_kwargs.insert("range".to_string(), Constant::Range(0.1));
         bucket_kwargs.insert("buckets".to_string(), Constant::Array(vec![0.0, 1.0]));
@@ -1483,17 +1512,42 @@ mod tests {
                 if message.contains("exactly one")
         ));
 
-        bucket_kwargs.insert("range".to_string(), Constant::NaN);
-        assert!(matches!(
-            bucket.apply(&[Field::Matrix], &bucket_kwargs),
-            Ok(Field::Group)
-        ));
-
-        bucket_kwargs.insert("buckets".to_string(), Constant::NaN);
+        bucket_kwargs.insert("range".to_string(), Constant::Range(0.1));
+        bucket_kwargs.insert("buckets".to_string(), Constant::Range(0.1));
         assert!(matches!(
             bucket.apply(&[Field::Matrix], &bucket_kwargs),
             Err(OperatorCheckError::InvalidExpression(message))
-                if message.contains("exactly one")
+                if message.contains("Array, not a Range")
+        ));
+
+        bucket_kwargs.insert("range".to_string(), Constant::Range(0.1));
+        bucket_kwargs.insert("buckets".to_string(), Constant::Array(vec![0.0, 0.0, 1.0]));
+        assert!(matches!(
+            bucket.apply(&[Field::Matrix], &bucket_kwargs),
+            Err(OperatorCheckError::InvalidExpression(message))
+                if message.contains("strictly increasing")
+        ));
+
+        bucket_kwargs.insert("buckets".to_string(), Constant::Array(vec![1.0, 0.0]));
+        assert!(matches!(
+            bucket.apply(&[Field::Matrix], &bucket_kwargs),
+            Err(OperatorCheckError::InvalidExpression(message))
+                if message.contains("strictly increasing")
+        ));
+
+        bucket_kwargs.insert("range".to_string(), Constant::NaN);
+        assert!(matches!(
+            bucket.apply(&[Field::Matrix], &bucket_kwargs),
+            Err(OperatorCheckError::InvalidKeywordType { name, .. })
+                if name == "range"
+        ));
+
+        bucket_kwargs.insert("range".to_string(), Constant::Range(0.1));
+        bucket_kwargs.insert("buckets".to_string(), Constant::NaN);
+        assert!(matches!(
+            bucket.apply(&[Field::Matrix], &bucket_kwargs),
+            Err(OperatorCheckError::InvalidKeywordType { name, .. })
+                if name == "buckets"
         ));
 
         let clamp = get_operator("clamp").unwrap();
