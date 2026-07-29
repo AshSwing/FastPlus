@@ -1,4 +1,29 @@
+//! AST
+//! 唯一结果对象: Alpha
+//!     |-> [Assignment;]         赋值语句
+//!     |-> [Assignment;]         赋值语句
+//!     |-> [...;]                ...
+//!     |-> signal(Expression)    信号表达式
+//! Alpha 由 N 个赋值语句和 1 个信号表达式组成
+//!
+//! Assignment 赋值语句
+//!     |-> variable(String) = value(Expression);
+//!
+//! 核心结构: Expression 表达式
+//!     |-> Group(Expression) / Ternary / Binary / Unary 递归结构
+//!     |-> Variable / Placeholder                       占位结构
+//!     |-> Operation*                                   操作符*
+//!     |-> Constant*                                    常数项*
+//!
+//! 特殊规则:
+//!   - 不可以给常数赋值 ❌    -> 刚试了下又可以了(2026-07-28)
+//!   - 不可复用数据字段名     -> 非左值 Variable 都是数据字段
+//!   - 参数支持字符串/字面值  -> 自动转为字符串解析
+//!   - 支持 NaN, 不支持 Inf
+
 use std::collections::HashMap;
+
+use crate::field::Constant;
 
 use pest_derive::Parser;
 
@@ -70,31 +95,6 @@ pub enum UnaryOp {
     Positive, // +
     Negative, // -
     Not,      // !
-}
-
-#[derive(Debug, Clone)]
-pub enum Driver {
-    Gaussian,
-    Uniform,
-    Cauchy,
-}
-
-#[derive(Debug, Clone)]
-pub enum Constant {
-    Float(f64),
-    NonNegativeFloat(f64),
-    PositiveFloat(f64),
-    Ratio(f64),
-    Integer(i64),
-    NonNegativeInteger(u64),
-    PositiveInteger(u64),
-    EnumInteger { from: i64, to: i64 },
-    Boolean(bool),   // true / false
-    NaN,             // "NaN"
-    Driver(Driver),  // "gaussian"
-    Range(f64),      // 0, 1, 0.1
-    Array(Vec<f64>), // buckets, filter(h, t)
-    String(String),
 }
 
 #[derive(Debug, Clone)]

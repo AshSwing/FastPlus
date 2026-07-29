@@ -1,9 +1,9 @@
 //！ Parser
 /// build_* -> struct
 /// parse_* -> enum
-use crate::ast::{
-    Alpha, Assignment, BinaryOp, Constant, Driver, Expression, FastPlusParser, Rule, UnaryOp,
-};
+use crate::ast::{Alpha, Assignment, BinaryOp, Expression, FastPlusParser, Rule, UnaryOp};
+use crate::field::{Constant, Field};
+use crate::operator::get_operator;
 use pest::Parser;
 use pest::Position;
 use pest::error::{Error as PestError, ErrorVariant::CustomError};
@@ -27,7 +27,6 @@ fn check_parentheses(input: &str) -> Result<(), PestError<Rule>> {
     let mut line_comment = false;
     let mut block_comment = false;
 
-    //? 这里为什么不直接 for (index, ch) in chars
     while let Some((index, ch)) = chars.next() {
         if line_comment {
             if ch == '\n' {
@@ -211,6 +210,7 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
                 let inner = primary.into_inner().next().unwrap();
                 match inner.as_rule() {
                     Rule::operation => {
+                        let operation_span = inner.as_span();
                         let mut operation = inner.into_inner();
                         // op(args*, kwargs*)
                         let op = operation.next().unwrap().to_string();
@@ -235,7 +235,8 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
                                             arg_span,
                                         ));
                                     }
-                                    let value = parse_constant(value.into_inner().next().unwrap())?;
+                                    let value =
+                                        Constant::from(value.into_inner().next().unwrap().as_str());
                                     kw_args.insert(name, value);
                                 }
                                 other => {
@@ -252,6 +253,13 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
                             }
                         }
 
+                        if let Err(message) = check_operation(&op, &pos_args, &kw_args) {
+                            return Err(PestError::new_from_span(
+                                CustomError { message },
+                                operation_span,
+                            ));
+                        }
+
                         Ok(Expression::Operation {
                             op,
                             pos_args,
@@ -260,9 +268,9 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
                     }
                     Rule::PLACEHOLDER => Ok(Expression::Placeholder(inner.as_str().to_string())),
                     Rule::VARIABLE => Ok(Expression::Variable(inner.as_str().to_string())),
-                    Rule::CONSTANT => Ok(Expression::Constant(parse_constant(
-                        inner.into_inner().next().unwrap(),
-                    )?)),
+                    Rule::CONSTANT => Ok(Expression::Constant(Constant::from(
+                        inner.into_inner().next().unwrap().as_str(),
+                    ))),
                     Rule::expression => Ok(Expression::Group(Box::new(parse_expression(inner)?))),
                     other => Err(PestError::new_from_span(
                         CustomError {
@@ -360,144 +368,51 @@ fn parse_pratt_expression(pair: Pair<Rule>) -> Result<Expression, PestError<Rule
         .parse(expression_pairs)
 }
 
-/// 解析常数, 用于操作符的关键字参数
-fn parse_constant(pair: Pair<Rule>) -> Result<Constant, PestError<Rule>> {
-    match pair.as_rule() {
-        Rule::INTEGER => {
-            let raw = pair.as_str();
-            let value = raw.parse::<i64>().map_err(|_| {
-                PestError::new_from_span(
-                    CustomError {
-                        message: format!("parse_constant(INTEGER) error: {:#?}", raw),
-                    },
-                    pair.as_span(),
-                )
-            })?;
+fn check_operation(
+    op: &str,
+    pos_args: &[Expression],
+    kw_args: &HashMap<String, Constant>,
+) -> Result<(), String> {
+    let Some(operator) = get_operator(op) else {
+        return Ok(());
+    };
 
-            if value > 0 {
-                Ok(Constant::PositiveInteger(value as u64))
-            } else if value == 0 {
-                Ok(Constant::NonNegativeInteger(0))
-            } else {
-                Ok(Constant::Integer(value))
-            }
-        }
-        Rule::FLOAT => {
-            let raw = pair.as_str();
-            let value = raw.parse::<f64>().map_err(|_| {
-                PestError::new_from_span(
-                    CustomError {
-                        message: format!("parse_constant(FLOAT) error: {:#?}", raw),
-                    },
-                    pair.as_span(),
-                )
-            })?;
+    let fields = pos_args
+        .iter()
+        .enumerate()
+        .map(|(index, expression)| {
+            infer_field(expression).unwrap_or_else(|| {
+                if operator.nary == -1 {
+                    operator.pos_args[0].clone()
+                } else {
+                    operator
+                        .pos_args
+                        .get(index)
+                        .or_else(|| operator.pos_args.first())
+                        .cloned()
+                        .unwrap_or(Field::Matrix)
+                }
+            })
+        })
+        .collect::<Vec<_>>();
 
-            if value > 0.0 && value < 1.0 {
-                Ok(Constant::Ratio(value))
-            } else if value > 0.0 {
-                Ok(Constant::PositiveFloat(value))
-            } else if value == 0.0 {
-                Ok(Constant::NonNegativeFloat(value))
-            } else {
-                Ok(Constant::Float(value))
-            }
-        }
-        Rule::BOOLEAN => {
-            let value = pair.as_str();
-            let lower = value.to_ascii_lowercase();
-
-            match lower.as_str() {
-                "true" => Ok(Constant::Boolean(true)),
-                "false" => Ok(Constant::Boolean(false)),
-                other => Err(PestError::new_from_span(
-                    CustomError {
-                        message: format!("parse_constant(BOOLEAN) error: {:#?}", other),
-                    },
-                    pair.as_span(),
-                )),
-            }
-        }
-        Rule::STRING => {
-            let raw = pair.as_str();
-            let value = raw.trim_matches('"').trim_matches('\'').trim();
-            let content = value.to_ascii_lowercase().replace(' ', "");
-
-            if content == "nan" {
-                return Ok(Constant::NaN);
-            }
-
-            if matches!(content.as_str(), "gaussian" | "uniform" | "cauchy") {
-                let driver = match content.as_str() {
-                    "gaussian" => Driver::Gaussian,
-                    "uniform" => Driver::Uniform,
-                    "cauchy" => Driver::Cauchy,
-                    _ => unreachable!(),
-                };
-                return Ok(Constant::Driver(driver));
-            }
-
-            if matches!(content.as_str(), "true" | "false") {
-                let bool = match content.as_str() {
-                    "true" => true,
-                    "false" => false,
-                    _ => unreachable!(),
-                };
-                return Ok(Constant::Boolean(bool));
-            }
-
-            if let Some(range_value) = parse_range(&content) {
-                return Ok(Constant::Range(range_value));
-            }
-
-            if let Some(array_values) = parse_array(&content) {
-                return Ok(Constant::Array(array_values));
-            }
-
-            Ok(Constant::String(value.to_string()))
-        }
-        _ => unreachable!(),
-    }
+    operator
+        .apply(&fields, kw_args)
+        .map(|_| ())
+        .map_err(|error| format!("operator `{op}` check failed: {error:?}"))
 }
 
-fn parse_range(input: &str) -> Option<f64> {
-    let mut parts = input.split(',');
-    let first = parts.next()?;
-    let second = parts.next()?;
-    let third = parts.next()?;
-
-    if parts.next().is_some() {
-        return None;
-    }
-
-    if first != "0" || second != "1" {
-        return None;
-    }
-
-    let step = third.parse::<f64>().ok()?;
-    if !(step > 0.0 && step < 1.0) {
-        return None;
-    }
-
-    Some(step)
-}
-
-fn parse_array(input: &str) -> Option<Vec<f64>> {
-    let mut values = Vec::new();
-
-    for part in input.split(',') {
-        if part.is_empty() {
-            return None;
+fn infer_field(expression: &Expression) -> Option<Field> {
+    match expression {
+        Expression::Constant(value) => Some(Field::Constant(value.clone())),
+        Expression::Group(expression) => infer_field(expression),
+        Expression::Operation { op, .. } => {
+            get_operator(op).map(|operator| operator.return_type.clone())
         }
-
-        let value = part.parse::<f64>().ok()?;
-        values.push(value);
-    }
-
-    if values.is_empty() {
-        None
-    } else {
-        Some(values)
+        Expression::Ternary { .. } | Expression::Binary { .. } | Expression::Unary { .. } => {
+            Some(Field::Matrix)
+        }
+        Expression::Variable(_) | Expression::Placeholder(_) => None,
     }
 }
 
@@ -536,6 +451,17 @@ mod tests {
         for input in inputs {
             assert!(parse(input).is_err(), "expected `{input}` to fail");
         }
+    }
+
+    #[test]
+    fn checks_known_operations_with_unknown_inputs() {
+        assert!(parse("divide(x, y)").is_ok());
+        assert!(parse("group_neutralize(x, industry)").is_ok());
+        assert!(parse("divide(add(x, y), z)").is_ok());
+        assert!(parse("custom_operator(1, 2)").is_ok());
+
+        assert!(parse("divide('foo', 2)").is_err());
+        assert!(parse("divide(x)").is_err());
     }
 
     #[test]

@@ -2,7 +2,8 @@
 #[path = "python_macro.rs"]
 mod python_macro;
 
-use crate::ast::{Alpha, Assignment, BinaryOp, Constant, Driver, Expression, UnaryOp};
+use crate::ast::{Alpha, Assignment, BinaryOp, Expression, UnaryOp};
+use crate::field::{Constant, Driver, Mask};
 use crate::parse as parse_rust;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -86,9 +87,11 @@ py_class!(
     ),
     (PyBooleanConstant(bool), name = "BooleanConstant", super = PyConstant),
     (PyNaNConstant, name = "NaNConstant", super = PyConstant),
+    (PyMaskConstant(Mask), name = "MaskConstant", super = PyConstant),
     (PyDriverConstant(Driver), name = "DriverConstant", super = PyConstant),
     (PyRangeConstant(f64), name = "RangeConstant", super = PyConstant),
     (PyArrayConstant(Vec<f64>), name = "ArrayConstant", super = PyConstant),
+    (PySetConstant(Vec<f64>), name = "SetConstant", super = PyConstant),
     (PyStringConstant(String), name = "StringConstant", super = PyConstant),
     (
         PyPlaceholderExpr(String),
@@ -125,39 +128,40 @@ py_enum!(
     ),
     (PyUnaryOp, UnaryOp, "UnaryOp", [Positive, Negative, Not]),
     (PyDriver, Driver, "Driver", [Gaussian, Uniform, Cauchy]),
+    (PyMask, Mask, "Mask", [NearestBound, Mean]),
 );
 
 fn build_pyconstant(py: Python<'_>, value: Constant) -> PyResult<Py<PyExpression>> {
     Ok(match value {
         Constant::Float(value) => build_pyconstant_instance!(py, PyFloatConstant(value)),
-        Constant::NonNegativeFloat(value) => {
-            build_pyconstant_instance!(py, PyNonNegativeFloatConstant(value))
-        }
         Constant::PositiveFloat(value) => {
             build_pyconstant_instance!(py, PyPositiveFloatConstant(value))
         }
         Constant::Ratio(value) => build_pyconstant_instance!(py, PyRatioConstant(value)),
         Constant::Integer(value) => build_pyconstant_instance!(py, PyIntegerConstant(value)),
-        Constant::NonNegativeInteger(value) => {
-            build_pyconstant_instance!(py, PyNonNegativeIntegerConstant(value))
-        }
         Constant::PositiveInteger(value) => {
             build_pyconstant_instance!(py, PyPositiveIntegerConstant(value))
         }
-        Constant::EnumInteger { from, to } => {
+        Constant::Zero => build_pyconstant_instance!(py, PyNonNegativeIntegerConstant(0)),
+        Constant::One => build_pyconstant_instance!(py, PyPositiveIntegerConstant(1)),
+        Constant::EnumInteger { range, .. } => {
+            let value_from = *range.iter().min().unwrap_or(&0);
+            let value_to = *range.iter().max().unwrap_or(&0);
             build_pyconstant_instance!(
                 py,
                 PyEnumIntegerConstant {
-                    value_from: from,
-                    value_to: to
+                    value_from,
+                    value_to
                 }
             )
         }
         Constant::Boolean(value) => build_pyconstant_instance!(py, PyBooleanConstant(value)),
         Constant::NaN => build_pyconstant_instance!(py, PyNaNConstant),
+        Constant::Mask(value) => build_pyconstant_instance!(py, PyMaskConstant(value)),
         Constant::Driver(value) => build_pyconstant_instance!(py, PyDriverConstant(value)),
         Constant::Range(value) => build_pyconstant_instance!(py, PyRangeConstant(value)),
         Constant::Array(value) => build_pyconstant_instance!(py, PyArrayConstant(value)),
+        Constant::Set(value) => build_pyconstant_instance!(py, PySetConstant(value)),
         Constant::String(value) => build_pyconstant_instance!(py, PyStringConstant(value)),
     })
 }
@@ -347,8 +351,12 @@ py_getters!(
         { value: f64, |self, _py| { f64::NAN } }
     ),
     (
+        PyMaskConstant,
+        { value: PyMask, |self, _py| { self.0.into() } }
+    ),
+    (
         PyDriverConstant,
-        { value: PyDriver, |self, _py| { self.0.clone().into() } }
+        { value: PyDriver, |self, _py| { self.0.into() } }
     ),
     (
         PyRangeConstant,
@@ -356,6 +364,10 @@ py_getters!(
     ),
     (
         PyArrayConstant,
+        { value: Vec<f64>, |self, _py| { self.0.clone() } }
+    ),
+    (
+        PySetConstant,
         { value: Vec<f64>, |self, _py| { self.0.clone() } }
     ),
     (
@@ -403,9 +415,12 @@ pub fn fastplus(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyEnumIntegerConstant>()?;
     module.add_class::<PyBooleanConstant>()?;
     module.add_class::<PyNaNConstant>()?;
+    module.add_class::<PyMask>()?;
+    module.add_class::<PyMaskConstant>()?;
     module.add_class::<PyDriverConstant>()?;
     module.add_class::<PyRangeConstant>()?;
     module.add_class::<PyArrayConstant>()?;
+    module.add_class::<PySetConstant>()?;
     module.add_class::<PyStringConstant>()?;
     module.add_class::<PyPlaceholderExpr>()?;
     module.add_class::<PyVariableExpr>()?;

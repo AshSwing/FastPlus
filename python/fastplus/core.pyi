@@ -22,6 +22,10 @@ class Driver:
     Uniform: Driver
     Cauchy: Driver
 
+class Mask:
+    NearestBound: Mask
+    Mean: Mask
+
 class Expression: ...
 
 class TernaryExpr(Expression):
@@ -76,6 +80,9 @@ class BooleanConstant(Constant):
 class NaNConstant(Constant):
     value: float
 
+class MaskConstant(Constant):
+    value: Mask
+
 class DriverConstant(Constant):
     value: Driver
 
@@ -83,6 +90,9 @@ class RangeConstant(Constant):
     value: float
 
 class ArrayConstant(Constant):
+    value: list[float]
+
+class SetConstant(Constant):
     value: list[float]
 
 class StringConstant(Constant):
