@@ -973,7 +973,7 @@ define_operator_registry! {
         {
             "lambda_min" => (NonNegativeFloat, Some(Constant::Zero)),
             "lambda_max" => (NonNegativeFloat, Some(Constant::One)),
-            "target_tvr" => (Ratio, Some(Constant::Ratio(0.1)))
+            "target_tvr" => (Ratio, None)
         },
         1,
         Matrix,
@@ -986,7 +986,7 @@ define_operator_registry! {
         {
             "lambda_min" => (NonNegativeFloat, Some(Constant::Zero)),
             "lambda_max" => (NonNegativeFloat, Some(Constant::One)),
-            "target_tvr" => (Ratio, Some(Constant::Ratio(0.1)))
+            "target_tvr" => (Ratio, None)
         },
         2,
         Matrix,
@@ -999,7 +999,7 @@ define_operator_registry! {
         {
             "lambda_min" => (NonNegativeFloat, Some(Constant::Zero)),
             "lambda_max" => (NonNegativeFloat, Some(Constant::One)),
-            "target_tvr" => (Ratio, Some(Constant::Ratio(0.1)))
+            "target_tvr" => (Ratio, None)
         },
         1,
         Matrix,
