@@ -112,10 +112,10 @@ impl Operator {
     ) -> Result<(), OperatorCheckError> {
         match self.name {
             "kth_element" => {
-                if let (Some(d), Some(k)) = (
-                    positive_integer(pos_args.get(1)),
-                    positive_integer(pos_args.get(2)),
-                ) && k > d
+                let d = positive_integer(pos_args.get(1));
+                let k = kw_args.get("k").map(|value| Field::Constant(value.clone()));
+                if let (Some(d), Some(k)) = (d, positive_integer(k.as_ref()))
+                    && k > d
                 {
                     return Err(OperatorCheckError::InvalidExpression(
                         "kth_element requires k <= d".to_string(),
@@ -705,9 +705,12 @@ define_operator_registry! {
     define_operator!(
         KTH_ELEMENT,
         "kth_element",
-        [Matrix, PositiveInt, PositiveInt],
-        {"ignore" => (Set, Some(Constant::Set(vec![f64::NAN])))},
-        3,
+        [Matrix, PositiveInt],
+        {
+            "k" => (PositiveInt, None),
+            "ignore" => (Set, Some(Constant::Set(vec![f64::NAN])))
+        },
+        2,
         Matrix,
         "Returns the K-th value from a time series by looking back over a specified number of ('d') days, with the option to ignore certain values. Commonly used for backfilling missing data."
     );
@@ -1465,18 +1468,28 @@ mod tests {
             required.apply(&matrices(2), &HashMap::new()),
             Err(OperatorCheckError::MissingKeyword(name)) if name == "lookback"
         ));
+
+        let kth = get_operator("kth_element").unwrap();
+        assert!(matches!(
+            kth.apply(
+                &[
+                    Field::Matrix,
+                    Field::Constant(Constant::PositiveInteger(5)),
+                ],
+                &HashMap::new(),
+            ),
+            Err(OperatorCheckError::MissingKeyword(name)) if name == "k"
+        ));
     }
 
     #[test]
     fn validates_operator_specific_constraints() {
         let kth = get_operator("kth_element").unwrap();
-        let args = vec![
-            Field::Matrix,
-            Field::Constant(Constant::PositiveInteger(3)),
-            Field::Constant(Constant::PositiveInteger(4)),
-        ];
+        let args = vec![Field::Matrix, Field::Constant(Constant::PositiveInteger(3))];
+        let mut kth_kwargs = HashMap::new();
+        kth_kwargs.insert("k".to_string(), Constant::PositiveInteger(4));
         assert!(matches!(
-            kth.apply(&args, &HashMap::new()),
+            kth.apply(&args, &kth_kwargs),
             Err(OperatorCheckError::InvalidExpression(message))
                 if message.contains("k <= d")
         ));
