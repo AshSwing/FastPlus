@@ -219,6 +219,15 @@ impl Constant {
             | (Constant::Range(_), Constant::Range(_))
             | (Constant::Array(_), Constant::Array(_))
             | (Constant::Array(_), Constant::Range(_))
+            // Array 参数也接受单个数值常量。
+            | (Constant::Array(_), Constant::Float(_))
+            | (Constant::Array(_), Constant::PositiveFloat(_))
+            | (Constant::Array(_), Constant::Ratio(_))
+            | (Constant::Array(_), Constant::Integer(_))
+            | (Constant::Array(_), Constant::PositiveInteger(_))
+            | (Constant::Array(_), Constant::Zero)
+            | (Constant::Array(_), Constant::One)
+            | (Constant::Array(_), Constant::EnumInteger { .. })
             | (Constant::Set(_), Constant::Set(_))
             | (Constant::String(_), Constant::String(_)) => true,
             _ => false,
@@ -497,6 +506,10 @@ mod tests {
         assert!(Constant::Ratio(0.0).fit(&Constant::One));
         assert!(!Constant::Ratio(0.0).fit(&Constant::PositiveInteger(2)));
         assert!(Constant::Array(Vec::new()).fit(&Constant::Range(0.1)));
+        assert!(Constant::Array(Vec::new()).fit(&Constant::Float(0.5)));
+        assert!(Constant::Array(Vec::new()).fit(&Constant::PositiveInteger(1)));
+        assert!(!Constant::Array(Vec::new()).fit(&Constant::Boolean(true)));
+        assert!(!Constant::Array(Vec::new()).fit(&Constant::String("x".into())));
         assert!(!Constant::Range(0.1).fit(&Constant::Array(Vec::new())));
 
         let expected = HashSet::from([1, 2, 3]);
