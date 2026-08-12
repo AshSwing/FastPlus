@@ -249,7 +249,7 @@ macro_rules! param_type {
         Field::Constant(Constant::Integer(0))
     };
     (NonNegativeInt) => {
-        Field::Constant(Constant::Zero)
+        Field::Constant(Constant::NonNegativeInteger(0))
     };
     (PositiveFloat) => {
         Field::Constant(Constant::PositiveFloat(0.1))
@@ -261,7 +261,7 @@ macro_rules! param_type {
         Field::Constant(Constant::Array(Vec::new()))
     };
     (NonNegativeFloat) => {
-        Field::Constant(Constant::Zero)
+        Field::Constant(Constant::NonNegativeFloat(0.0))
     };
     (Ratio) => {
         Field::Constant(Constant::Ratio(0.1))

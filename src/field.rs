@@ -21,9 +21,11 @@ pub enum Mask {
 #[derive(Debug, Clone)]
 pub enum Constant {
     Float(f64),                                      // 浮点数
+    NonNegativeFloat(f64),                           // 非负浮点数
     PositiveFloat(f64),                              // 正浮点数
     Ratio(f64),                                      // 比例 (0~1) target_tvr 0.0 ~ 1.0
     Integer(i64),                                    // 整数
+    NonNegativeInteger(u64),                         // 非负整数
     PositiveInteger(u64),                            // 正整数
     Zero,                                            // 0, 0.0
     One,                                             // 1, 1.0
@@ -108,30 +110,49 @@ impl Constant {
             (Constant::Float(_), actual) => matches!(
                 actual,
                 Constant::Float(_)
+                    | Constant::NonNegativeFloat(_)
                     | Constant::PositiveFloat(_)
                     | Constant::Ratio(_)
                     | Constant::Integer(_)
+                    | Constant::NonNegativeInteger(_)
                     | Constant::PositiveInteger(_)
                     | Constant::Zero
                     | Constant::One
                     | Constant::EnumInteger { .. }
                     | Constant::NaN
             ),
+            (Constant::NonNegativeFloat(_), actual) => match actual {
+                Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
+                | Constant::PositiveFloat(value)
+                | Constant::Ratio(value) => value.is_finite() && *value >= 0.0,
+                Constant::Integer(value) => *value >= 0,
+                Constant::NonNegativeInteger(_)
+                | Constant::PositiveInteger(_)
+                | Constant::Zero
+                | Constant::One => true,
+                Constant::EnumInteger { value, .. } => *value >= 0,
+                _ => false,
+            },
             // 下面几类需要根据实际值检查范围，而不是只看 enum variant
             (Constant::PositiveFloat(_), actual) => match actual {
                 Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
                 | Constant::PositiveFloat(value)
                 | Constant::Ratio(value) => value.is_finite() && *value > 0.0,
                 Constant::Integer(value) => *value > 0,
+                Constant::NonNegativeInteger(value) => *value > 0,
                 Constant::PositiveInteger(_) | Constant::One => true,
                 Constant::EnumInteger { value, .. } => *value > 0,
                 _ => false,
             },
             (Constant::Ratio(_), actual) => match actual {
                 Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
                 | Constant::PositiveFloat(value)
                 | Constant::Ratio(value) => value.is_finite() && (0.0..=1.0).contains(value),
                 Constant::Integer(value) => (0..=1).contains(value),
+                Constant::NonNegativeInteger(value) => *value <= 1,
                 Constant::PositiveInteger(value) => *value <= 1,
                 Constant::Zero | Constant::One => true,
                 Constant::EnumInteger { value, .. } => (0..=1).contains(value),
@@ -139,9 +160,11 @@ impl Constant {
             },
             (Constant::Integer(_), actual) => match actual {
                 Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
                 | Constant::PositiveFloat(value)
                 | Constant::Ratio(value) => value.is_finite() && value.fract() == 0.0,
                 Constant::Integer(_)
+                | Constant::NonNegativeInteger(_)
                 | Constant::PositiveInteger(_)
                 | Constant::Zero
                 | Constant::One
@@ -150,25 +173,45 @@ impl Constant {
             },
             (Constant::PositiveInteger(_), actual) => match actual {
                 Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
                 | Constant::PositiveFloat(value)
                 | Constant::Ratio(value) => {
                     value.is_finite() && *value > 0.0 && value.fract() == 0.0
                 }
+                Constant::NonNegativeInteger(value) => *value > 0,
                 Constant::PositiveInteger(_) | Constant::One => true,
                 Constant::Integer(value) => *value > 0,
                 Constant::EnumInteger { value, .. } => *value > 0,
                 _ => false,
             },
+            (Constant::NonNegativeInteger(_), actual) => match actual {
+                Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
+                | Constant::PositiveFloat(value)
+                | Constant::Ratio(value) => {
+                    value.is_finite() && *value >= 0.0 && value.fract() == 0.0
+                }
+                Constant::Integer(value) => *value >= 0,
+                Constant::NonNegativeInteger(_)
+                | Constant::PositiveInteger(_)
+                | Constant::Zero
+                | Constant::One => true,
+                Constant::EnumInteger { value, .. } => *value >= 0,
+                _ => false,
+            },
             (Constant::Zero, actual) => match actual {
                 Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
                 | Constant::PositiveFloat(value)
                 | Constant::Ratio(value) => value.is_finite() && *value == 0.0,
                 Constant::Integer(value) | Constant::EnumInteger { value, .. } => *value == 0,
+                Constant::NonNegativeInteger(value) => *value == 0,
                 Constant::Zero => true,
                 _ => false,
             },
             (Constant::One, actual) => match actual {
                 Constant::Float(value)
+                | Constant::NonNegativeFloat(value)
                 | Constant::PositiveFloat(value)
                 | Constant::Ratio(value) => value.is_finite() && *value == 1.0,
                 Constant::Integer(value) | Constant::EnumInteger { value, .. } => *value == 1,
@@ -181,9 +224,11 @@ impl Constant {
                 actual,
                 Constant::Mask(_)
                     | Constant::Float(_)
+                    | Constant::NonNegativeFloat(_)
                     | Constant::PositiveFloat(_)
                     | Constant::Ratio(_)
                     | Constant::Integer(_)
+                    | Constant::NonNegativeInteger(_)
                     | Constant::PositiveInteger(_)
                     | Constant::Zero
                     | Constant::One
@@ -204,6 +249,7 @@ impl Constant {
             (Constant::EnumInteger { range, value: _ }, Constant::Zero) => range.contains(&0),
             (Constant::EnumInteger { range, value: _ }, Constant::One) => range.contains(&1),
             (Constant::EnumInteger { range, value: _ }, Constant::Float(value))
+            | (Constant::EnumInteger { range, value: _ }, Constant::NonNegativeFloat(value))
             | (Constant::EnumInteger { range, value: _ }, Constant::PositiveFloat(value))
             | (Constant::EnumInteger { range, value: _ }, Constant::Ratio(value)) => {
                 value.is_finite()
@@ -221,9 +267,11 @@ impl Constant {
             | (Constant::Array(_), Constant::Range(_))
             // Array 参数也接受单个数值常量。
             | (Constant::Array(_), Constant::Float(_))
+            | (Constant::Array(_), Constant::NonNegativeFloat(_))
             | (Constant::Array(_), Constant::PositiveFloat(_))
             | (Constant::Array(_), Constant::Ratio(_))
             | (Constant::Array(_), Constant::Integer(_))
+            | (Constant::Array(_), Constant::NonNegativeInteger(_))
             | (Constant::Array(_), Constant::PositiveInteger(_))
             | (Constant::Array(_), Constant::Zero)
             | (Constant::Array(_), Constant::One)
@@ -247,9 +295,11 @@ impl Field {
                 matches!(
                     constant,
                     Constant::Float(_)
+                        | Constant::NonNegativeFloat(_)
                         | Constant::PositiveFloat(_)
                         | Constant::Ratio(_)
                         | Constant::Integer(_)
+                        | Constant::NonNegativeInteger(_)
                         | Constant::PositiveInteger(_)
                         | Constant::Zero
                         | Constant::One
@@ -524,5 +574,25 @@ mod tests {
             }
             .fit(&actual)
         );
+    }
+
+    #[test]
+    fn matches_non_negative_numeric_types() {
+        let non_negative_float = Constant::NonNegativeFloat(0.0);
+        assert!(non_negative_float.fit(&Constant::Zero));
+        assert!(non_negative_float.fit(&Constant::Ratio(0.1)));
+        assert!(non_negative_float.fit(&Constant::PositiveFloat(2.5)));
+        assert!(non_negative_float.fit(&Constant::PositiveInteger(2)));
+        assert!(!non_negative_float.fit(&Constant::Float(-0.1)));
+        assert!(!non_negative_float.fit(&Constant::Integer(-1)));
+
+        let non_negative_integer = Constant::NonNegativeInteger(0);
+        assert!(non_negative_integer.fit(&Constant::Zero));
+        assert!(non_negative_integer.fit(&Constant::One));
+        assert!(non_negative_integer.fit(&Constant::PositiveInteger(2)));
+        assert!(non_negative_integer.fit(&Constant::Ratio(1.0)));
+        assert!(non_negative_integer.fit(&Constant::Float(2.0)));
+        assert!(!non_negative_integer.fit(&Constant::Ratio(0.1)));
+        assert!(!non_negative_integer.fit(&Constant::Float(-2.0)));
     }
 }

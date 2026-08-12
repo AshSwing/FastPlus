@@ -134,11 +134,17 @@ py_enum!(
 fn build_pyconstant(py: Python<'_>, value: Constant) -> PyResult<Py<PyExpression>> {
     Ok(match value {
         Constant::Float(value) => build_pyconstant_instance!(py, PyFloatConstant(value)),
+        Constant::NonNegativeFloat(value) => {
+            build_pyconstant_instance!(py, PyNonNegativeFloatConstant(value))
+        }
         Constant::PositiveFloat(value) => {
             build_pyconstant_instance!(py, PyPositiveFloatConstant(value))
         }
         Constant::Ratio(value) => build_pyconstant_instance!(py, PyRatioConstant(value)),
         Constant::Integer(value) => build_pyconstant_instance!(py, PyIntegerConstant(value)),
+        Constant::NonNegativeInteger(value) => {
+            build_pyconstant_instance!(py, PyNonNegativeIntegerConstant(value))
+        }
         Constant::PositiveInteger(value) => {
             build_pyconstant_instance!(py, PyPositiveIntegerConstant(value))
         }
