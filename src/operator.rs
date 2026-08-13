@@ -1256,9 +1256,9 @@ define_operator_registry! {
         "tail",
         [Matrix],
         {
-            "lower" => (Number, Some(Constant::Integer(0))),
-            "upper" => (Number, Some(Constant::Integer(0))),
-            "newval" => (Number, Some(Constant::Integer(0)))
+            "lower" => (Number, None),
+            "upper" => (Number, None),
+            "newval" => (Number, None)
         },
         1,
         Matrix,
